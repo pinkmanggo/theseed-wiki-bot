@@ -1,0 +1,16 @@
+{
+  "name": "theseed-wiki-bot",
+  "version": "2.0.0",
+  "description": "더시드/나무위키 자동화 통합 웹 봇",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
