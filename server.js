@@ -44,7 +44,6 @@ function restoreProtectedSections(text, protectedBlocks) {
 function checkEligibility(docTitle, docContent, filters = {}) {
     const { targetNamespace, targetCategory } = filters;
 
-    // 이름공간 검사
     if (targetNamespace && targetNamespace !== '전체') {
         const hasNamespace = docTitle.includes(':');
         const currentNamespace = hasNamespace ? docTitle.split(':')[0] : '문서';
@@ -53,7 +52,6 @@ function checkEligibility(docTitle, docContent, filters = {}) {
         }
     }
 
-    // 특정 분류 검사
     if (targetCategory && targetCategory.trim() !== '') {
         const categoryRegex = new RegExp(`\\[분류:\\s*${targetCategory.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\]`, 'i');
         if (!categoryRegex.test(docContent)) {
@@ -65,37 +63,11 @@ function checkEligibility(docTitle, docContent, filters = {}) {
 }
 
 // ==========================================
-// 3. 외부 API 최신화 모듈 (유튜브, KOBIS 등)
-// ==========================================
-async function fetchExternalData(type, targetId, apiKey) {
-    if (!type || !targetId) return null;
-    try {
-        if (type === 'YOUTUBE' && apiKey) {
-            const url = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${targetId}&key=${apiKey}`;
-            const res = await axios.get(url, { timeout: 5000 });
-            const count = res.data.items?.[0]?.statistics?.subscriberCount;
-            return count ? parseInt(count).toLocaleString('ko-KR') + '명' : null;
-        } else if (type === 'KOBIS' && apiKey) {
-            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10).replace(/-/g, '');
-            const url = `http://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json?key=${apiKey}&targetDt=${yesterday}`;
-            const res = await axios.get(url, { timeout: 5000 });
-            const list = res.data.boxOfficeResult?.dailyBoxOfficeList || [];
-            const movie = list.find(m => m.movieCd === targetId || m.movieNm === targetId);
-            return movie ? parseInt(movie.audiAcc).toLocaleString('ko-KR') + '명' : null;
-        }
-    } catch (err) {
-        console.error(`외부 API (${type}) 조회 실패:`, err.message);
-    }
-    return null;
-}
-
-// ==========================================
-// 4. 종합 규칙 및 치환 엔진
+// 3. 종합 규칙 및 치환 엔진
 // ==========================================
 function applyWikiRules(text, options = {}) {
     let result = text;
 
-    // A. 사용자 설정 단어/정규식 치환
     if (options.customSearch) {
         const searchPattern = options.useRegex 
             ? new RegExp(options.customSearch, 'g') 
@@ -103,9 +75,7 @@ function applyWikiRules(text, options = {}) {
         result = result.replace(searchPattern, options.customReplace || '');
     }
 
-    // B. 기본 자동 교정 규칙들
     if (options.autoClean) {
-        // 역링크 정리 (문서, 분류, 파일, 틀)
         if (options.oldName && options.newName) {
             const oldEsc = options.oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const newName = options.newName;
@@ -116,28 +86,17 @@ function applyWikiRules(text, options = {}) {
             result = result.replace(new RegExp(`\\[include\\(\\s*틀:${oldEsc}([\\s,\\)])`, 'g'), `[include(틀:${newName}$1`);
         }
 
-        // 유튜브 URL 정리
         result = result.replace(/(https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[\w-]+)(&[\w-&=]+)/g, '$1');
         result = result.replace(/(https?:\/\/youtu\.be\/[\w-]+)(\?[\w-&=]+)/g, '$1');
-
-        // 문단 제목 하이퍼링크 제거
         result = result.replace(/^(={1,6})\s*\[\[(?:[^|\]]*\|)?([^\]]+)\]\]\s*\1$/gm, '$1 $2 $1');
-
-        // 다크모드 배경색 통합 (#191919, #1f2023 -> #1c1d1f)
         result = result.replace(/#(?:191919|1f2023)/gi, '#1c1d1f');
-    }
-
-    // C. 외부 API 수치 최신화 반영
-    if (options.liveValue && options.targetParam) {
-        const paramRegex = new RegExp(`(\\|\\s*${options.targetParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*)([^\\n\\|]+)`, 'g');
-        result = result.replace(paramRegex, `$1${options.liveValue}`);
     }
 
     return result;
 }
 
 // ==========================================
-// 5. 대시보드 웹 UI
+// 4. 대시보드 웹 UI
 // ==========================================
 app.get('/', (req, res) => {
     res.send(`
@@ -322,7 +281,7 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// 6. 메인 배치 작업 API Endpoint
+// 5. 메인 배치 작업 API Endpoint (User-Agent 포함)
 // ==========================================
 app.post('/api/run-batch', async (req, res) => {
     const { baseUrl, token, docList, filters, options, editLog } = req.body;
@@ -331,9 +290,10 @@ app.post('/api/run-batch', async (req, res) => {
         return res.json({ success: false, message: 'API 토큰과 대상 문서 목록이 비어있습니다.' });
     }
 
+    // 💡 브라우저 헤더 추가 (Cloudflare / 봇 방어 우회)
     const headers = {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
 
@@ -342,7 +302,6 @@ app.post('/api/run-batch', async (req, res) => {
 
     for (const docTitle of docList) {
         try {
-            // 1. GET: 문서 읽기
             const url = `${apiBase}/edit/${encodeURIComponent(docTitle)}`;
             const getRes = await axios.get(url, { headers, timeout: 10000 });
             
@@ -354,31 +313,26 @@ app.post('/api/run-batch', async (req, res) => {
                 continue;
             }
 
-            // 2. 대상 검사 (이름공간 및 분류 조건)
             const check = checkEligibility(docTitle, originalText, filters);
             if (!check.eligible) {
                 summary.push({ doc: docTitle, status: 'SKIP', reason: check.reason });
                 continue;
             }
 
-            // 3. 예외 마스킹 -> 규칙 적용 -> 마스킹 복원
             const { maskedText, protectedBlocks } = maskProtectedSections(originalText);
             const updatedMasked = applyWikiRules(maskedText, options);
             const finalText = restoreProtectedSections(updatedMasked, protectedBlocks);
 
-            // 4. 변경 사항 존재 확인
             if (originalText === finalText) {
                 summary.push({ doc: docTitle, status: 'SKIP', reason: '변경할 대상 구문이 없음' });
                 continue;
             }
 
-            // 5. 시뮬레이션 모드(Dry Run)
             if (options?.isDryRun) {
                 summary.push({ doc: docTitle, status: 'DRY_RUN', reason: '성공적으로 치환 대상 감지됨 (저장 안 함)' });
                 continue;
             }
 
-            // 6. POST: 저장
             const postPayload = {
                 text: finalText,
                 log: editLog || '[자동/봇] 조건별 문서 정돈',
@@ -388,7 +342,6 @@ app.post('/api/run-batch', async (req, res) => {
             const postRes = await axios.post(url, postPayload, { headers, timeout: 10000 });
             summary.push({ doc: docTitle, status: 'SUCCESS', rev: postRes.data.rev });
 
-            // API rate limit 대응 (3초 대기)
             await new Promise(resolve => setTimeout(resolve, 3000));
 
         } catch (err) {
